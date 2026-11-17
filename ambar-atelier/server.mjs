@@ -24,7 +24,7 @@ const SERVICES = {
   'Coloração Integral':            { min: 90,  price: 'desde 75 €',  pros: ['Inês Valadares', 'Beatriz Lemos'] },
   'Balayage Âmbar':                { min: 180, price: 'desde 160 €', pros: ['Beatriz Lemos', 'Inês Valadares'] },
   'Facial Luminosidade':           { min: 90,  price: '110 €',       pros: ['Marta Sequeira'] },
-  'Lifting de Pestanas':           { min: 60,  price: '65 €',        pros: ['Marta Sequeira'] },
+  'Lifting & Tinta de Pestanas':   { min: 60,  price: '65 €',        pros: ['Marta Sequeira'] },
   'Manicure Semipermanente':       { min: 60,  price: '35 €',        pros: ['Sofia Antunes'] },
   'Pedicure Spa':                  { min: 75,  price: '48 €',        pros: ['Sofia Antunes'] },
   'Maquilhagem Social':            { min: 60,  price: '70 €',        pros: ['Sofia Antunes', 'Marta Sequeira'] },

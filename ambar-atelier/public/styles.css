@@ -691,6 +691,10 @@ figure img, .g__btn img { filter: saturate(.82) sepia(.1) contrast(1.03) brightn
 @media (max-width: 639px) {
   .g--tall { grid-row: span 2; }
   .g--tall .g__btn img { aspect-ratio: auto; height: 100%; }
+  /* A later tall photo has no neighbours to size its rows on phones
+     (the next item is full-width), so it would collapse: show it full-width. */
+  .g--tall ~ .g--tall { grid-row: auto; grid-column: 1 / -1; }
+  .g--tall ~ .g--tall .g__btn img { aspect-ratio: 4 / 3; height: auto; }
 }
 @media (min-width: 640px) {
   .gallery__grid { grid-template-columns: repeat(12, 1fr); gap: 1rem; grid-auto-flow: dense; }

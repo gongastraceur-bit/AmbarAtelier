@@ -41,6 +41,18 @@ Create `data/closures.json` with an array of dates, for example `["2026-08-10", 
 
 The service list (duration, price and who does it) is in `server.mjs` under `SERVICES`. The radio buttons in `public/index.html` must use the same names.
 
+## Demo on Cloudflare (no backend)
+
+`wrangler.jsonc` publishes only `public/` as a static site, and `public/_headers` adds the security headers. Without `server.mjs`, the page detects that `/api` is missing and switches the booking form and newsletter to **demo mode**:
+
+- availability is simulated with the same rules (hours, durations, staff, holidays);
+- a slot booked during the visit shows as taken;
+- submitting shows a reference number.
+
+Nothing is stored or emailed in demo mode.
+
+Cloudflare settings: no build command, deploy command `npx wrangler deploy`. If this folder isn't the root of the Git repository, set the project's **Root directory** to `ambar-atelier`.
+
 ## Deploying
 
 The server needs a host that runs Node and has a **persistent disk** for `data/`, such as Render, Railway, Fly.io or a small VPS. Static-only hosts like Netlify or GitHub Pages can't run the booking API.

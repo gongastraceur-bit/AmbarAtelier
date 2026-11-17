@@ -422,7 +422,70 @@
   const PHONE_HELP = 'ligue +351 210 000 000';
   let catalogue = null;
   let slotsReq = 0;
-  fetch('/api/services').then(r => r.ok ? r.json() : null).then(d => { catalogue = d && d.services; filterPros(); }).catch(() => {});
+
+  /* ---------- Demo mode ----------
+     When the site is hosted without server.mjs (e.g. a static demo on
+     Cloudflare), the booking flow runs against this in-browser stand-in:
+     same rules as the server, believable busy slots, no data leaves the page. */
+  const DEMO_SERVICES = {
+    'Corte & Brushing': { minutes: 60, pros: ['Inês Valadares', 'Beatriz Lemos'] },
+    'Coloração Integral': { minutes: 90, pros: ['Inês Valadares', 'Beatriz Lemos'] },
+    'Balayage Âmbar': { minutes: 180, pros: ['Beatriz Lemos', 'Inês Valadares'] },
+    'Facial Luminosidade': { minutes: 90, pros: ['Marta Sequeira'] },
+    'Lifting & Tinta de Pestanas': { minutes: 60, pros: ['Marta Sequeira'] },
+    'Manicure Semipermanente': { minutes: 60, pros: ['Sofia Antunes'] },
+    'Pedicure Spa': { minutes: 75, pros: ['Sofia Antunes'] },
+    'Maquilhagem Social': { minutes: 60, pros: ['Sofia Antunes', 'Marta Sequeira'] },
+    'Consulta (não tenho a certeza)': { minutes: 20, pros: ['Inês Valadares', 'Beatriz Lemos', 'Marta Sequeira', 'Sofia Antunes'] }
+  };
+  const demo = {
+    booked: [], // bookings made during this visit, so a taken slot greys out
+    hours: { 2: [600, 1200], 3: [600, 1200], 4: [600, 1200], 5: [600, 1200], 6: [540, 1140] },
+    holidays: ['01-01', '04-25', '05-01', '06-10', '06-13', '08-15', '10-05', '11-01', '12-01', '12-08', '12-25'],
+    busy(iso, pro, start, end) {
+      if (this.booked.some(b => b.date === iso && b.pro === pro && b.start < end && start < b.end)) return true;
+      // Deterministic "existing clients": same date + person always looks the same
+      let seed = [...(iso + pro)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 233280, 7);
+      for (let m = 540; m < 1200; m += 30) {
+        seed = (seed * 9301 + 49297) % 233280;
+        if (seed / 233280 < 0.14 && m < end && start < m + 60) return true;
+      }
+      return false;
+    },
+    availability(iso, service, pro) {
+      const svc = DEMO_SERVICES[service];
+      const d = new Date(iso + 'T12:00:00');
+      const hours = this.hours[d.getDay()];
+      if (!hours) return { closed: 'Estamos encerrados ao domingo e à segunda-feira.', slots: [] };
+      if (this.holidays.includes(iso.slice(5))) return { closed: 'Feriado — o atelier está encerrado.', slots: [] };
+      const pros = pro && pro !== 'Sem preferência' ? [pro] : svc.pros;
+      const now = new Date();
+      const earliest = iso === toISO(now) ? now.getHours() * 60 + now.getMinutes() + 60 : 0;
+      const slots = [];
+      for (let m = hours[0]; m + svc.minutes <= hours[1]; m += 30) {
+        const free = m >= earliest && pros.some(p => !this.busy(iso, p, m, m + svc.minutes));
+        slots.push({ time: `${pad(Math.floor(m / 60))}:${pad(m % 60)}`, available: free });
+      }
+      return { slots };
+    },
+    book(p) {
+      const svc = DEMO_SERVICES[p.service];
+      const start = Number(p.time.slice(0, 2)) * 60 + Number(p.time.slice(3));
+      const pros = p.pro && p.pro !== 'Sem preferência' ? [p.pro] : svc.pros;
+      const pro = pros.find(x => !this.busy(p.date, x, start, start + svc.minutes));
+      if (!pro) return { status: 409, data: { errors: { time: 'Esse horário acabou de ser reservado. Escolha outro, por favor.' } } };
+      this.booked.push({ date: p.date, pro, start, end: start + svc.minutes });
+      const ref = 'AMB-' + Math.random().toString(16).slice(2, 8).toUpperCase();
+      return { status: 201, data: { ref, emailed: false } };
+    }
+  };
+  // Live if server.mjs answers, demo otherwise. Decided once, on load.
+  const mode = fetch('/api/services', { headers: { Accept: 'application/json' } })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(d => { catalogue = d.services; return 'live'; })
+    .catch(() => { catalogue = DEMO_SERVICES; return 'demo'; })
+    .then(m => { filterPros(); return m; });
+  const pause = ms => new Promise(r => setTimeout(r, ms));
 
   const emptySlots = msg => { slotsBox.innerHTML = `<p class="slots__empty">${msg}</p>`; };
 
@@ -442,11 +505,17 @@
     slotsBox.setAttribute('aria-busy', 'true');
     emptySlots('A procurar horários…');
     try {
-      const qs = new URLSearchParams({ date: iso, service: sel.value, pro: proSelect.value });
-      const res = await fetch('/api/availability?' + qs);
-      const data = await res.json();
+      let data;
+      if (await mode === 'demo') {
+        await pause(350); // feel like a real lookup
+        data = demo.availability(iso, sel.value, proSelect.value);
+      } else {
+        const qs = new URLSearchParams({ date: iso, service: sel.value, pro: proSelect.value });
+        const res = await fetch('/api/availability?' + qs);
+        data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'erro');
+      }
       if (req !== slotsReq) return; // a newer request has replaced this one
-      if (!res.ok) throw new Error(data.error || 'erro');
       if (data.closed) {
         setError('err-date', data.closed + ' Escolha outro dia.', dateInput);
         setSum('date', '—');
@@ -582,8 +651,15 @@
     const payload = Object.fromEntries(['service', 'pro', 'date', 'time', 'name', 'phone', 'email', 'notes', 'website'].map(k => [k, fd.get(k) || '']));
     payload.consent = $('#consent').checked;
     try {
-      const res = await fetch('/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const data = await res.json().catch(() => ({}));
+      let res, data;
+      if (await mode === 'demo') {
+        await pause(1100);
+        const r = demo.book(payload);
+        res = { status: r.status }; data = r.data;
+      } else {
+        res = await fetch('/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        data = await res.json().catch(() => ({}));
+      }
       if (res.status === 201) {
         steps.forEach(s => s.hidden = true);
         $('.progress', form).hidden = true;
@@ -639,6 +715,12 @@
     const msg = $('.newsletter__msg', nl);
     if (validators.email(input.value)) { msg.textContent = 'Verifique o email, por favor.'; input.focus(); return; }
     msg.textContent = 'A enviar…';
+    if (await mode === 'demo') {
+      await pause(700);
+      msg.textContent = 'Obrigada! Vai receber a próxima carta do atelier.';
+      input.value = '';
+      return;
+    }
     try {
       const res = await fetch('/api/newsletter', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: input.value, website: $('input[name="website"]', nl).value }) });
